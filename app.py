@@ -3,12 +3,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
 
 import pandas as pd
 import time
 import re
-import json
 
 app = Flask(__name__)
 
@@ -20,7 +18,8 @@ BRANDS = [
     "FENDI", "CELINE", "DIOR", "CHRISTIAN DIOR",
     "SAINT LAURENT", "YSL", "BOTTEGA VENETA",
     "BALENCIAGA", "GOYARD", "MIU MIU", "BURBERRY",
-    "VALENTINO", "LOEWE", "CARTIER", "ROLEX"
+    "VALENTINO", "LOEWE", "CARTIER", "ROLEX",
+    "CHLOE", "JACQUEMUS"
 ]
 
 
@@ -28,11 +27,10 @@ def clean_price(text):
     if not text:
         return None
 
-    text = str(text).replace(",", "")
-    match = re.search(r"(\d+(\.\d+)?)", text)
+    match = re.search(r"\$\s*([\d,]+)", str(text))
 
     if match:
-        return int(float(match.group(1)))
+        return int(match.group(1).replace(",", ""))
 
     return None
 
@@ -62,74 +60,11 @@ def get_driver():
     return driver
 
 
-def extract_product_data(soup):
-    title = "Unknown"
-    price = None
-    image = ""
-
-    # 1. 優先抓 JSON-LD，這通常是最準的商品資料
-    scripts = soup.find_all("script", type="application/ld+json")
-
-    for script in scripts:
-        try:
-            data = json.loads(script.string)
-
-            if isinstance(data, list):
-                data_list = data
-            else:
-                data_list = [data]
-
-            for item in data_list:
-                if item.get("@type") == "Product":
-                    title = item.get("name", title)
-
-                    img = item.get("image")
-                    if isinstance(img, list) and len(img) > 0:
-                        image = img[0]
-                    elif isinstance(img, str):
-                        image = img
-
-                    offers = item.get("offers")
-                    if isinstance(offers, dict):
-                        price = clean_price(offers.get("price"))
-
-                    if title != "Unknown" and price:
-                        return title, price, image
-
-        except:
-            pass
-
-    # 2. 備用：抓 h1
-    h1 = soup.find("h1")
-    if h1:
-        title = h1.get_text(strip=True)
-
-    # 3. 備用：抓 og:title
-    if title == "Unknown":
-        meta_title = soup.find("meta", property="og:title")
-        if meta_title and meta_title.get("content"):
-            title = meta_title.get("content").strip()
-
-    # 4. 備用：抓 og:image
-    meta_image = soup.find("meta", property="og:image")
-    if meta_image and meta_image.get("content"):
-        image = meta_image.get("content")
-
-    # 5. 備用：只抓看起來像價格的 meta
-    meta_price = soup.find("meta", property="product:price:amount")
-    if meta_price and meta_price.get("content"):
-        price = clean_price(meta_price.get("content"))
-
-    return title, price, image
-
-
-def scrape_fashionphile():
-    driver = get_driver()
-
+def get_product_links(driver):
     driver.get(URL)
     time.sleep(8)
 
-    for i in range(5):
+    for i in range(6):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(2)
 
@@ -143,22 +78,106 @@ def scrape_fashionphile():
         if href and "/products/" in href and href not in product_links:
             product_links.append(href)
 
-    product_links = product_links[:MAX_PRODUCTS]
+    return product_links[:MAX_PRODUCTS]
+
+
+def get_title(driver):
+    try:
+        return driver.find_element(By.TAG_NAME, "h1").text.strip()
+    except:
+        return driver.title.strip()
+
+
+def get_image(driver):
+    selectors = [
+        "meta[property='og:image']",
+        "img[src*='cdn.shopify']",
+        "img"
+    ]
+
+    for selector in selectors:
+        try:
+            element = driver.find_element(By.CSS_SELECTOR, selector)
+
+            if selector.startswith("meta"):
+                image = element.get_attribute("content")
+            else:
+                image = element.get_attribute("src")
+
+            if image:
+                return image
+        except:
+            pass
+
+    return ""
+
+
+def get_price(driver):
+    time.sleep(2)
+
+    price_selectors = [
+        "[data-cy*='price']",
+        "[data-testid*='price']",
+        "[class*='price']",
+        "[class*='Price']",
+        "span",
+        "div"
+    ]
+
+    for selector in price_selectors:
+        try:
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+
+            for element in elements:
+                text = element.text.strip()
+
+                if "$" not in text:
+                    continue
+
+                price = clean_price(text)
+
+                if price and price > 100:
+                    return price
+        except:
+            pass
+
+    page_text = driver.find_element(By.TAG_NAME, "body").text
+    prices = re.findall(r"\$\s*[\d,]+", page_text)
+
+    valid_prices = []
+
+    for p in prices:
+        price = clean_price(p)
+
+        if price and price > 100:
+            valid_prices.append(price)
+
+    if valid_prices:
+        return max(valid_prices)
+
+    return None
+
+
+def scrape_fashionphile():
+    driver = get_driver()
+
+    product_links = get_product_links(driver)
 
     print("準備爬商品數:", len(product_links))
 
     products = []
 
     for index, link in enumerate(product_links, start=1):
+
         try:
             print(f"正在爬第 {index} 個商品:", link)
 
             driver.get(link)
-            time.sleep(3)
+            time.sleep(5)
 
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-
-            title, price, image = extract_product_data(soup)
+            title = get_title(driver)
+            image = get_image(driver)
+            price = get_price(driver)
 
             if not price:
                 print("沒有抓到價格，跳過:", link)
@@ -173,6 +192,8 @@ def scrape_fashionphile():
                 "image": image,
                 "link": link
             })
+
+            print("成功:", brand, title, price)
 
         except Exception as e:
             print("商品爬取失敗:", e)
@@ -230,11 +251,11 @@ def analyze(products):
 @app.route("/")
 def home():
     products = scrape_fashionphile()
-    table_data = analyze(products)
+    rows = analyze(products)
 
     return render_template(
         "index.html",
-        rows=table_data
+        rows=rows
     )
 
 
