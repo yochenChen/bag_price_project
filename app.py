@@ -11,7 +11,7 @@ import re
 app = Flask(__name__)
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 30
+MAX_PRODUCTS = 100000
 
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
@@ -35,14 +35,20 @@ def clean_price(text):
     return None
 
 
-def extract_brand(title):
-    upper_title = title.upper()
+def extract_brand(text):
+    text_upper = text.upper()
 
     for brand in BRANDS:
-        if brand in upper_title:
+        if brand in text_upper:
             return brand.title()
 
     return "Unknown"
+
+
+def clean_name(text):
+    text = re.sub(r"\$\s*[\d,]+", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def get_driver():
@@ -60,143 +66,92 @@ def get_driver():
     return driver
 
 
-def get_product_links(driver):
+def scrape_fashionphile():
+    driver = get_driver()
     driver.get(URL)
     time.sleep(8)
 
-    for i in range(6):
+    for i in range(8):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(2)
 
-    links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/products/']")
-
-    product_links = []
-
-    for link in links:
-        href = link.get_attribute("href")
-
-        if href and "/products/" in href and href not in product_links:
-            product_links.append(href)
-
-    return product_links[:MAX_PRODUCTS]
-
-
-def get_title(driver):
-    try:
-        return driver.find_element(By.TAG_NAME, "h1").text.strip()
-    except:
-        return driver.title.strip()
-
-
-def get_image(driver):
-    selectors = [
-        "meta[property='og:image']",
-        "img[src*='cdn.shopify']",
-        "img"
-    ]
-
-    for selector in selectors:
-        try:
-            element = driver.find_element(By.CSS_SELECTOR, selector)
-
-            if selector.startswith("meta"):
-                image = element.get_attribute("content")
-            else:
-                image = element.get_attribute("src")
-
-            if image:
-                return image
-        except:
-            pass
-
-    return ""
-
-
-def get_price(driver):
-    time.sleep(2)
-
-    price_selectors = [
-        "[data-cy*='price']",
-        "[data-testid*='price']",
-        "[class*='price']",
-        "[class*='Price']",
-        "span",
-        "div"
-    ]
-
-    for selector in price_selectors:
-        try:
-            elements = driver.find_elements(By.CSS_SELECTOR, selector)
-
-            for element in elements:
-                text = element.text.strip()
-
-                if "$" not in text:
-                    continue
-
-                price = clean_price(text)
-
-                if price and price > 100:
-                    return price
-        except:
-            pass
-
-    page_text = driver.find_element(By.TAG_NAME, "body").text
-    prices = re.findall(r"\$\s*[\d,]+", page_text)
-
-    valid_prices = []
-
-    for p in prices:
-        price = clean_price(p)
-
-        if price and price > 100:
-            valid_prices.append(price)
-
-    if valid_prices:
-        return max(valid_prices)
-
-    return None
-
-
-def scrape_fashionphile():
-    driver = get_driver()
-
-    product_links = get_product_links(driver)
-
-    print("準備爬商品數:", len(product_links))
+    product_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/products/']")
 
     products = []
+    seen_links = set()
 
-    for index, link in enumerate(product_links, start=1):
-
+    for link in product_links:
         try:
-            print(f"正在爬第 {index} 個商品:", link)
+            href = link.get_attribute("href")
 
-            driver.get(link)
-            time.sleep(5)
-
-            title = get_title(driver)
-            image = get_image(driver)
-            price = get_price(driver)
-
-            if not price:
-                print("沒有抓到價格，跳過:", link)
+            if not href or href in seen_links:
                 continue
 
-            brand = extract_brand(title)
+            seen_links.add(href)
+
+            card = link.find_element(
+                By.XPATH,
+                "./ancestor::*[self::div or self::li or self::article][.//img][1]"
+            )
+
+            card_text = card.text.strip()
+
+            if "$" not in card_text:
+                continue
+
+            price_matches = re.findall(r"\$\s*[\d,]+", card_text)
+
+            if not price_matches:
+                continue
+
+            price = clean_price(price_matches[-1])
+
+            if not price or price <= 100:
+                continue
+
+            raw_name = clean_name(card_text)
+            lines = [x.strip() for x in raw_name.split("\n") if x.strip()]
+
+            if len(lines) >= 2:
+                name = " ".join(lines)
+            else:
+                name = raw_name
+
+            brand = extract_brand(name)
+
+            if brand == "Unknown":
+                continue
+
+            image = ""
+
+            try:
+                img = card.find_element(By.CSS_SELECTOR, "img")
+                image = (
+                    img.get_attribute("src")
+                    or img.get_attribute("data-src")
+                    or img.get_attribute("srcset")
+                    or ""
+                )
+
+                if "," in image and " " in image:
+                    image = image.split(",")[0].split(" ")[0]
+
+            except:
+                image = ""
 
             products.append({
                 "brand": brand,
-                "name": title,
+                "name": name,
                 "price": price,
                 "image": image,
-                "link": link
+                "link": href
             })
 
-            print("成功:", brand, title, price)
+            if len(products) >= MAX_PRODUCTS:
+                break
 
         except Exception as e:
-            print("商品爬取失敗:", e)
+            continue
 
     driver.quit()
 
@@ -212,40 +167,27 @@ def analyze(products):
         return []
 
     summary = (
-        df.groupby("brand")["price"]
+        df.groupby(["brand", "name"])
         .agg(
-            average_price="mean",
-            lowest_price="min",
-            highest_price="max",
-            product_count="count"
+            average_price=("price", "mean"),
+            lowest_price=("price", "min"),
+            highest_price=("price", "max"),
+            product_count=("price", "count"),
+            image=("image", "first"),
+            link=("link", "first"),
+            product_price=("price", "first")
         )
         .reset_index()
     )
 
     summary["average_price"] = summary["average_price"].round(0).astype(int)
 
-    final_df = df.merge(summary, on="brand", how="left")
-
-    final_df = final_df[
-        [
-            "brand",
-            "average_price",
-            "lowest_price",
-            "highest_price",
-            "product_count",
-            "name",
-            "image",
-            "link",
-            "price"
-        ]
-    ]
-
-    final_df = final_df.sort_values(
-        by=["brand", "price"],
+    summary = summary.sort_values(
+        by=["brand", "name"],
         ascending=[True, True]
     )
 
-    return final_df.to_dict(orient="records")
+    return summary.to_dict(orient="records")
 
 
 @app.route("/")
@@ -253,10 +195,7 @@ def home():
     products = scrape_fashionphile()
     rows = analyze(products)
 
-    return render_template(
-        "index.html",
-        rows=rows
-    )
+    return render_template("index.html", rows=rows)
 
 
 if __name__ == "__main__":

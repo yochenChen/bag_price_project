@@ -23,39 +23,19 @@
 
         <thead class="table-dark">
             <tr>
+                <th>Image</th>
                 <th>Brand</th>
+                <th>Product Name</th>
                 <th>Average Price</th>
                 <th>Lowest Price</th>
                 <th>Highest Price</th>
                 <th>Product Count</th>
-                <th>Product Name</th>
-                <th>Image</th>
             </tr>
         </thead>
 
         <tbody>
             {% for row in rows %}
             <tr>
-                <td>{{ row.brand }}</td>
-
-                <td>${{ "{:,}".format(row.average_price) }}</td>
-
-                <td>${{ "{:,}".format(row.lowest_price) }}</td>
-
-                <td>${{ "{:,}".format(row.highest_price) }}</td>
-
-                <td>{{ row.product_count }}</td>
-
-                <td>
-                    <a href="{{ row.link }}" target="_blank">
-                        {{ row.name }}
-                    </a>
-                    <br>
-                    <small class="text-muted">
-                        Product Price: ${{ "{:,}".format(row.price) }}
-                    </small>
-                </td>
-
                 <td>
                     {% if row.image %}
                     <img
@@ -67,6 +47,22 @@
                     No Image
                     {% endif %}
                 </td>
+
+                <td>{{ row.brand }}</td>
+
+                <td>
+                    <a href="{{ row.link }}" target="_blank">
+                        {{ row.name }}
+                    </a>
+                </td>
+
+                <td>${{ "{:,}".format(row.average_price) }}</td>
+
+                <td>${{ "{:,}".format(row.lowest_price) }}</td>
+
+                <td>${{ "{:,}".format(row.highest_price) }}</td>
+
+                <td>{{ row.product_count }}</td>
             </tr>
             {% endfor %}
         </tbody>
