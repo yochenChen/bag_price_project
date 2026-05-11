@@ -11,8 +11,7 @@ import re
 app = Flask(__name__)
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 100000
-
+MAX_PRODUCTS = 100000000
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
     "FENDI", "CELINE", "DIOR", "CHRISTIAN DIOR",
