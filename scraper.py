@@ -94,7 +94,17 @@ def scrape_fashionphile():
                     "Chrome/120.0.0.0 Safari/537.36"
                 )
             )
+            page.route(
 
+                "**/*",
+
+                lambda route: route.abort()
+
+                if route.request.resource_type in ["image", "font", "media"]
+
+                else route.continue_()
+
+            )
             page.goto(
                 URL,
                 wait_until="domcontentloaded",
