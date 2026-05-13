@@ -4,5 +4,5 @@ services:
     env: python
     buildCommand: |
       pip install -r requirements.txt
-      playwright install chromium
-    startCommand: gunicorn app:app
+      playwright install --with-deps chromium
+    startCommand: gunicorn app:app --timeout 300

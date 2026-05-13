@@ -3,7 +3,7 @@ import pandas as pd
 import re
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 10000000
+MAX_PRODUCTS = 30
 
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
@@ -48,12 +48,23 @@ def scrape_fashionphile():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
+
             headless=True,
+
             args=[
+
                 "--no-sandbox",
+
+                "--disable-setuid-sandbox",
+
                 "--disable-dev-shm-usage",
-                "--disable-gpu"
+
+                "--disable-gpu",
+
+                "--single-process"
+
             ]
+
         )
 
         page = browser.new_page(
