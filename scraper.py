@@ -8,7 +8,7 @@ import time
 import re
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 50
+MAX_PRODUCTS = 10000000
 
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
@@ -101,9 +101,16 @@ def scrape_fashionphile():
             if not price_matches:
                 continue
 
-            price = clean_price(price_matches[-1])
+            prices = [clean_price(p) for p in price_matches]
+            prices = [p for p in prices if p]
 
-            if not price or price <= 100:
+            if not prices:
+                continue
+
+            # 如果有折扣價，取最低價
+            price = min(prices)
+
+            if price <= 100:
                 continue
 
             raw_name = clean_name(card_text)

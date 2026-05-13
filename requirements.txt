@@ -1,3 +1,5 @@
 Flask
 pandas
 gunicorn
+selenium
+webdriver-manager
