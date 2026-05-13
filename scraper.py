@@ -3,7 +3,11 @@ import pandas as pd
 import re
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 10
+MAX_PRODUCTS = 200
+
+SCROLL_TIMES = 4
+SCROLL_AMOUNT = 8000
+SCROLL_WAIT_MS = 1500
 
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
@@ -20,6 +24,7 @@ def clean_price(text):
         return None
 
     match = re.search(r"\$\s*([\d,]+)", str(text))
+
     if match:
         return int(match.group(1).replace(",", ""))
 
@@ -27,7 +32,7 @@ def clean_price(text):
 
 
 def extract_brand(text):
-    text_upper = text.upper()
+    text_upper = str(text).upper()
 
     for brand in BRANDS:
         if brand in text_upper:
@@ -37,155 +42,165 @@ def extract_brand(text):
 
 
 def clean_name(text):
-    text = re.sub(r"\$\s*[\d,]+", "", text)
+    text = re.sub(r"\$\s*[\d,]+", "", str(text))
     text = re.sub(r"\s+", " ", text)
+
     return text.strip()
+
+
+def normalize_image_url(image):
+    if not image:
+        return ""
+
+    image = str(image).strip()
+
+    if "," in image and " " in image:
+        image = image.split(",")[0].split(" ")[0]
+
+    if image.startswith("//"):
+        image = "https:" + image
+
+    return image
 
 
 def scrape_fashionphile():
     products = []
     seen_links = set()
+    browser = None
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-
-            headless=True,
-
-            args=[
-
-                "--no-sandbox",
-
-                "--disable-setuid-sandbox",
-
-                "--disable-dev-shm-usage",
-
-                "--disable-gpu",
-
-                "--single-process"
-
-            ]
-
-        )
-
-        page = browser.new_page(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+        try:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--disable-sync",
+                    "--disable-default-apps",
+                    "--disable-features=Translate,BackForwardCache",
+                    "--blink-settings=imagesEnabled=true"
+                ]
             )
-        )
 
-        page.goto(
-            URL,
-            wait_until="domcontentloaded",
-            timeout=120000
-        )
-
-        page.wait_for_timeout(10000)
-
-        for i in range(10):
-            page.mouse.wheel(0, 10000)
-            page.wait_for_timeout(2000)
-
-        links = page.locator("a[href*='/products/']")
-        count = links.count()
-
-        print("找到商品連結數:", count)
-
-        for i in range(count):
-            try:
-                link = links.nth(i)
-
-                # 跳過隱藏的 menu link
-                if not link.is_visible():
-                    continue
-
-                href = link.get_attribute("href")
-
-                if not href:
-                    continue
-
-                if href.startswith("/"):
-                    href = "https://www.fashionphile.com" + href
-
-                if href in seen_links:
-                    continue
-
-                seen_links.add(href)
-
-                card = link.locator(
-                    "xpath=ancestor::*[self::div or self::li or self::article][.//img][1]"
+            page = browser.new_page(
+                viewport={"width": 1366, "height": 768},
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
                 )
+            )
 
-                if card.count() == 0:
-                    continue
+            page.goto(
+                URL,
+                wait_until="domcontentloaded",
+                timeout=90000
+            )
 
-                card_text = card.inner_text().strip()
+            page.wait_for_timeout(6000)
 
-                if "$" not in card_text:
-                    continue
+            for _ in range(SCROLL_TIMES):
+                page.mouse.wheel(0, SCROLL_AMOUNT)
+                page.wait_for_timeout(SCROLL_WAIT_MS)
 
-                price_matches = re.findall(r"\$\s*[\d,]+", card_text)
+            links = page.locator("a[href*='/products/']")
+            count = links.count()
 
-                if not price_matches:
-                    continue
+            print("找到商品連結數:", count)
 
-                prices = [clean_price(p) for p in price_matches]
-                prices = [p for p in prices if p]
-
-                if not prices:
-                    continue
-
-                price = min(prices)
-
-                if price <= 100:
-                    continue
-
-                raw_name = clean_name(card_text)
-                lines = [x.strip() for x in raw_name.split("\n") if x.strip()]
-                name = " ".join(lines)
-
-                brand = extract_brand(name)
-
-                if brand == "Unknown":
-                    continue
-
-                image = ""
-
-                try:
-                    img = card.locator("img").first
-                    image = (
-                        img.get_attribute("src")
-                        or img.get_attribute("data-src")
-                        or img.get_attribute("srcset")
-                        or ""
-                    )
-
-                    if "," in image and " " in image:
-                        image = image.split(",")[0].split(" ")[0]
-
-                except:
-                    image = ""
-
-                products.append({
-                    "brand": brand,
-                    "name": name,
-                    "price": price,
-                    "image": image,
-                    "link": href
-                })
-
-                print("成功:", brand, name, price)
-
+            for i in range(count):
                 if len(products) >= MAX_PRODUCTS:
                     break
 
-            except Exception as e:
-                print("跳過商品:", e)
-                continue
+                try:
+                    link = links.nth(i)
 
-        browser.close()
+                    if not link.is_visible():
+                        continue
+
+                    href = link.get_attribute("href")
+
+                    if not href:
+                        continue
+
+                    if href.startswith("/"):
+                        href = "https://www.fashionphile.com" + href
+
+                    if href in seen_links:
+                        continue
+
+                    seen_links.add(href)
+
+                    card = link.locator(
+                        "xpath=ancestor::*[self::div or self::li or self::article][.//img][1]"
+                    )
+
+                    if card.count() == 0:
+                        continue
+
+                    card_text = card.inner_text().strip()
+
+                    if "$" not in card_text:
+                        continue
+
+                    price_matches = re.findall(r"\$\s*[\d,]+", card_text)
+
+                    if not price_matches:
+                        continue
+
+                    prices = [clean_price(p) for p in price_matches]
+                    prices = [p for p in prices if p and p > 100]
+
+                    if not prices:
+                        continue
+
+                    price = min(prices)
+
+                    raw_name = clean_name(card_text)
+                    lines = [x.strip() for x in raw_name.split("\n") if x.strip()]
+                    name = " ".join(lines)
+
+                    brand = extract_brand(name)
+
+                    if brand == "Unknown":
+                        continue
+
+                    image = ""
+
+                    try:
+                        img = card.locator("img").first
+                        image = (
+                            img.get_attribute("src")
+                            or img.get_attribute("data-src")
+                            or img.get_attribute("srcset")
+                            or ""
+                        )
+                        image = normalize_image_url(image)
+
+                    except Exception:
+                        image = ""
+
+                    products.append({
+                        "brand": brand,
+                        "name": name,
+                        "price": price,
+                        "image": image,
+                        "link": href
+                    })
+
+                    print("成功:", brand, name, price)
+
+                except Exception as e:
+                    print("跳過商品:", e)
+                    continue
+
+        finally:
+            if browser:
+                browser.close()
 
     print("總共抓到商品數:", len(products))
 

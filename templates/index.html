@@ -2,7 +2,6 @@
 <html>
 
 <head>
-
     <meta charset="UTF-8">
 
     <title>
@@ -18,7 +17,6 @@
         rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap-table@1.23.5/dist/bootstrap-table.min.css"
     >
-
 </head>
 
 <body class="bg-light">
@@ -37,8 +35,14 @@
 
     </div>
 
+    {% if rows|length == 0 %}
+        <div class="alert alert-warning">
+            No data found. Click Refresh Data to scrape the latest products.
+        </div>
+    {% endif %}
+
     <table
-        class="table table-bordered table-hover"
+        class="table table-bordered table-hover align-middle"
         data-toggle="table"
         data-search="true"
         data-pagination="true"
@@ -67,11 +71,10 @@
             <tr>
 
                 <td>
-
                     {% if row.image %}
-
                     <img
                         src="{{ row.image }}"
+                        alt="{{ row.name }}"
                         style="
                             width:120px;
                             height:120px;
@@ -79,9 +82,9 @@
                             border-radius:10px;
                         "
                     >
-
+                    {% else %}
+                    No Image
                     {% endif %}
-
                 </td>
 
                 <td>
@@ -89,14 +92,9 @@
                 </td>
 
                 <td>
-
-                    <a
-                        href="{{ row.link }}"
-                        target="_blank"
-                    >
+                    <a href="{{ row.link }}" target="_blank">
                         {{ row.name }}
                     </a>
-
                 </td>
 
                 <td>
