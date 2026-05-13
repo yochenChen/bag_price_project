@@ -26,7 +26,7 @@ def analyze(products):
             highest_price=("price", "max"),
             product_count=("price", "count"),
             image=("image", "first"),
-            link=("link", "first")
+            url=("url", "first")
         )
         .reset_index()
     )
@@ -45,16 +45,13 @@ def analyze(products):
 
 @app.route("/")
 def home():
+    rows = []
+
     if os.path.exists(CSV_FILE):
         df = pd.read_csv(CSV_FILE)
         rows = analyze(df.to_dict(orient="records"))
-    else:
-        rows = []
 
-    return render_template(
-        "index.html",
-        rows=rows
-    )
+    return render_template("index.html", rows=rows)
 
 
 @app.route("/refresh")

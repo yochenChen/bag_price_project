@@ -1,231 +1,174 @@
-from playwright.sync_api import sync_playwright
-import pandas as pd
-import re
+import csv
+import time
+import requests
 
-URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 100
+BASE_URL = "https://www.fashionphile.com"
+COLLECTION_HANDLE = "all-bags"
+CSV_FILE = "products.csv"
 
-SCROLL_TIMES = 0
-SCROLL_AMOUNT = 3000
-SCROLL_WAIT_MS = 200
+MAX_PRODUCTS = 1000
+MAX_WORKERS = 2
+REQUEST_TIMEOUT = 10
+SLEEP_SECONDS = 1
+SAVE_EVERY_ROW = True
+DOWNLOAD_IMAGES = False
 
-BRANDS = [
-    "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
-    "FENDI", "CELINE", "DIOR", "CHRISTIAN DIOR",
-    "SAINT LAURENT", "YSL", "BOTTEGA VENETA",
-    "BALENCIAGA", "GOYARD", "MIU MIU", "BURBERRY",
-    "VALENTINO", "LOEWE", "CARTIER", "ROLEX",
-    "CHLOE", "JACQUEMUS"
-]
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
 
 
-def clean_price(text):
-    if not text:
+def clean_price(value):
+    if value is None:
         return None
 
-    match = re.search(r"\$\s*([\d,]+)", str(text))
+    try:
+        return int(float(value))
+    except:
+        return None
 
-    if match:
-        return int(match.group(1).replace(",", ""))
+
+def get_product_page_url(product):
+    handle = product.get("handle", "")
+
+    if handle:
+        return f"{BASE_URL}/products/{handle}"
+
+    return ""
+
+
+def get_image_url(product):
+    images = product.get("images", [])
+
+    if images and isinstance(images, list):
+        return images[0].get("src", "")
+
+    image = product.get("image")
+
+    if isinstance(image, dict):
+        return image.get("src", "")
+
+    return ""
+
+
+def get_price(product):
+    variants = product.get("variants", [])
+
+    prices = []
+
+    for variant in variants:
+        price = clean_price(variant.get("price"))
+
+        if price:
+            prices.append(price)
+
+    if prices:
+        return min(prices)
 
     return None
 
 
-def extract_brand(text):
-    text_upper = str(text).upper()
+def fetch_collection_page(session, page):
+    url = (
+        f"{BASE_URL}/collections/"
+        f"{COLLECTION_HANDLE}/products.json"
+        f"?limit=250&page={page}"
+    )
 
-    for brand in BRANDS:
-        if brand in text_upper:
-            return brand.title()
+    response = session.get(
+        url,
+        headers=HEADERS,
+        timeout=REQUEST_TIMEOUT
+    )
 
-    return "Unknown"
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data.get("products", [])
 
 
-def clean_name(text):
-    text = re.sub(r"\$\s*[\d,]+", "", str(text))
-    text = re.sub(r"\s+", " ", text)
+def product_to_row(product):
+    brand = product.get("vendor", "").strip()
+    name = product.get("title", "").strip()
+    image = get_image_url(product)
+    url = get_product_page_url(product)
+    price = get_price(product)
 
-    return text.strip()
+    if not brand or not name or not price or not url:
+        return None
 
-
-def normalize_image_url(image):
-    if not image:
-        return ""
-
-    image = str(image).strip()
-
-    if "," in image and " " in image:
-        image = image.split(",")[0].split(" ")[0]
-
-    if image.startswith("//"):
-        image = "https:" + image
-
-    return image
+    return {
+        "brand": brand,
+        "name": name,
+        "image": image,
+        "url": url,
+        "price": price
+    }
 
 
 def scrape_fashionphile():
     products = []
-    seen_links = set()
-    browser = None
+    seen_urls = set()
 
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--disable-sync",
-                    "--disable-default-apps",
-                    "--disable-features=Translate,BackForwardCache",
-                    "--blink-settings=imagesEnabled=true"
-                ]
-            )
+    with requests.Session() as session:
 
-            page = browser.new_page(
-                viewport={"width": 1366, "height": 768},
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                )
-            )
-            page.route(
+        page = 1
 
-                "**/*",
+        while len(products) < MAX_PRODUCTS:
 
-                lambda route: route.abort()
+            try:
+                product_list = fetch_collection_page(session, page)
+            except Exception as e:
+                print("抓取失敗:", e)
+                break
 
-                if route.request.resource_type in ["image", "font", "media"]
+            if not product_list:
+                break
 
-                else route.continue_()
+            for product in product_list:
 
-            )
-            page.goto(
-                URL,
-                wait_until="domcontentloaded",
-                timeout=90000
-            )
+                row = product_to_row(product)
 
-            page.wait_for_timeout(6000)
+                if not row:
+                    continue
 
-            for _ in range(SCROLL_TIMES):
-                page.mouse.wheel(0, SCROLL_AMOUNT)
-                page.wait_for_timeout(SCROLL_WAIT_MS)
+                if row["url"] in seen_urls:
+                    continue
 
-            links = page.locator("a[href*='/products/']")
-            count = links.count()
+                seen_urls.add(row["url"])
+                products.append(row)
 
-            print("找到商品連結數:", count)
-
-            for i in range(count):
                 if len(products) >= MAX_PRODUCTS:
                     break
 
-                try:
-                    link = links.nth(i)
-
-                    if not link.is_visible():
-                        continue
-
-                    href = link.get_attribute("href")
-
-                    if not href:
-                        continue
-
-                    if href.startswith("/"):
-                        href = "https://www.fashionphile.com" + href
-
-                    if href in seen_links:
-                        continue
-
-                    seen_links.add(href)
-
-                    card = link.locator(
-                        "xpath=ancestor::*[self::div or self::li or self::article][.//img][1]"
-                    )
-
-                    if card.count() == 0:
-                        continue
-
-                    card_text = card.inner_text().strip()
-
-                    if "$" not in card_text:
-                        continue
-
-                    price_matches = re.findall(r"\$\s*[\d,]+", card_text)
-
-                    if not price_matches:
-                        continue
-
-                    prices = [clean_price(p) for p in price_matches]
-                    prices = [p for p in prices if p and p > 100]
-
-                    if not prices:
-                        continue
-
-                    price = min(prices)
-
-                    raw_name = clean_name(card_text)
-                    lines = [x.strip() for x in raw_name.split("\n") if x.strip()]
-                    name = " ".join(lines)
-
-                    brand = extract_brand(name)
-
-                    if brand == "Unknown":
-                        continue
-
-                    image = ""
-
-                    try:
-                        img = card.locator("img").first
-                        image = (
-                            img.get_attribute("src")
-                            or img.get_attribute("data-src")
-                            or img.get_attribute("srcset")
-                            or ""
-                        )
-                        image = normalize_image_url(image)
-
-                    except Exception:
-                        image = ""
-
-                    products.append({
-                        "brand": brand,
-                        "name": name,
-                        "price": price,
-                        "image": image,
-                        "link": href
-                    })
-
-                    print("成功:", brand, name, price)
-
-                except Exception as e:
-                    print("跳過商品:", e)
-                    continue
-
-        finally:
-            if browser:
-                browser.close()
-
-    print("總共抓到商品數:", len(products))
+            page += 1
+            time.sleep(SLEEP_SECONDS)
 
     return products
 
 
-if __name__ == "__main__":
+def save_to_csv(products):
+    fieldnames = ["brand", "name", "image", "url", "price"]
+
+    with open(CSV_FILE, "w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for product in products:
+            writer.writerow(product)
+
+
+def refresh_csv():
     products = scrape_fashionphile()
+    save_to_csv(products)
+    return products
 
-    df = pd.DataFrame(products)
 
-    df.to_csv(
-        "products.csv",
-        index=False,
-        encoding="utf-8-sig"
-    )
-
-    print("已產生 products.csv")
+if __name__ == "__main__":
+    products = refresh_csv()
+    print(f"已更新 {CSV_FILE}，共 {len(products)} 筆")
