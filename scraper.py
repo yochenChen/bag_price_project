@@ -3,11 +3,11 @@ import pandas as pd
 import re
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 100
+MAX_PRODUCTS = 70
 
-SCROLL_TIMES = 4
-SCROLL_AMOUNT = 8000
-SCROLL_WAIT_MS = 1500
+SCROLL_TIMES = 3
+SCROLL_AMOUNT = 6000
+SCROLL_WAIT_MS = 500
 
 BRANDS = [
     "CHANEL", "HERMES", "LOUIS VUITTON", "GUCCI", "PRADA",
