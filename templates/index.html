@@ -35,12 +35,6 @@
 
     </div>
 
-    {% if rows|length == 0 %}
-        <div class="alert alert-warning">
-            No data found. Click Refresh Data to scrape the latest products.
-        </div>
-    {% endif %}
-
     <table
         class="table table-bordered table-hover align-middle"
         data-toggle="table"
@@ -51,7 +45,6 @@
     >
 
         <thead class="table-dark">
-
             <tr>
                 <th>Image</th>
                 <th data-sortable="true">Brand</th>
@@ -61,13 +54,11 @@
                 <th data-sortable="true">Highest Price</th>
                 <th data-sortable="true">Product Count</th>
             </tr>
-
         </thead>
 
         <tbody>
 
             {% for row in rows %}
-
             <tr>
 
                 <td>
@@ -87,34 +78,22 @@
                     {% endif %}
                 </td>
 
-                <td>
-                    {{ row.brand }}
-                </td>
+                <td>{{ row.brand }}</td>
 
-                <td>
-                    <a href="{{ row.link }}" target="_blank">
+                 <td>
+                    <a href="{{ row.url }}" target="_blank"">
                         {{ row.name }}
                     </a>
                 </td>
 
-                <td>
-                    ${{ "{:,}".format(row.average_price) }}
-                </td>
+                <td>${{ "{:,}".format(row.average_price) }}</td>
 
-                <td>
-                    ${{ "{:,}".format(row.lowest_price) }}
-                </td>
+                <td>${{ "{:,}".format(row.lowest_price) }}</td>
 
-                <td>
-                    ${{ "{:,}".format(row.highest_price) }}
-                </td>
+                <td>${{ "{:,}".format(row.highest_price) }}</td>
 
-                <td>
-                    {{ row.product_count }}
-                </td>
-
+                <td>{{ row.product_count }}</td>
             </tr>
-
             {% endfor %}
 
         </tbody>
