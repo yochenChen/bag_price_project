@@ -49,9 +49,9 @@
                 <th>Image</th>
                 <th data-sortable="true">Brand</th>
                 <th data-sortable="true">Product Name</th>
-                <th data-sortable="true">Average Price</th>
-                <th data-sortable="true">Lowest Price</th>
-                <th data-sortable="true">Highest Price</th>
+                <th data-sortable="true" data-sorter="priceSorter">Average Price</th>
+                <th data-sortable="true" data-sorter="priceSorter">Lowest Price</th>
+                <th data-sortable="true" data-sorter="priceSorter">Highest Price</th>
                 <th data-sortable="true">Product Count</th>
             </tr>
         </thead>
@@ -108,6 +108,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap-table@1.23.5/dist/bootstrap-table.min.js"></script>
 
+<script>
+
+    function priceSorter(a, b) {
+
+        const priceA = Number(String(a).replace(/[^0-9.-]+/g, ""));
+
+        const priceB = Number(String(b).replace(/[^0-9.-]+/g, ""));
+
+        return priceA - priceB;
+
+    }
+
+</script>
 </body>
 
 </html>
