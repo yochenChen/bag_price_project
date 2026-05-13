@@ -3,7 +3,7 @@ import pandas as pd
 import re
 
 URL = "https://www.fashionphile.com/collections/all-bags"
-MAX_PRODUCTS = 200
+MAX_PRODUCTS = 100
 
 SCROLL_TIMES = 4
 SCROLL_AMOUNT = 8000
