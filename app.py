@@ -1,17 +1,22 @@
 from flask import Flask, render_template, redirect, url_for
 import pandas as pd
+import os
 
 from scraper import scrape_fashionphile
 
 app = Flask(__name__)
 
+CSV_FILE = "products.csv"
+
 
 def analyze(products):
-
     df = pd.DataFrame(products)
 
     if df.empty:
         return []
+
+    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+    df = df.dropna(subset=["price"])
 
     summary = (
         df.groupby(["brand", "name"])
@@ -26,43 +31,43 @@ def analyze(products):
         .reset_index()
     )
 
-    summary["average_price"] = (
-        summary["average_price"]
-        .round(0)
-        .astype(int)
+    summary["average_price"] = summary["average_price"].round(0).astype(int)
+    summary["lowest_price"] = summary["lowest_price"].astype(int)
+    summary["highest_price"] = summary["highest_price"].astype(int)
+
+    summary = summary.sort_values(
+        by=["brand", "name"],
+        ascending=[True, True]
     )
 
     return summary.to_dict(orient="records")
 
 
-cached_rows = []
-
-
 @app.route("/")
 def home():
-
-    global cached_rows
-
-    if not cached_rows:
-
-        products = scrape_fashionphile()
-
-        cached_rows = analyze(products)
+    if os.path.exists(CSV_FILE):
+        df = pd.read_csv(CSV_FILE)
+        rows = analyze(df.to_dict(orient="records"))
+    else:
+        rows = []
 
     return render_template(
         "index.html",
-        rows=cached_rows
+        rows=rows
     )
 
 
 @app.route("/refresh")
 def refresh():
-
-    global cached_rows
-
     products = scrape_fashionphile()
 
-    cached_rows = analyze(products)
+    df = pd.DataFrame(products)
+
+    df.to_csv(
+        CSV_FILE,
+        index=False,
+        encoding="utf-8-sig"
+    )
 
     return redirect(url_for("home"))
 
