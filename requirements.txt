@@ -1,5 +1,4 @@
 Flask
 pandas
+playwright
 gunicorn
-selenium
-webdriver-manager
